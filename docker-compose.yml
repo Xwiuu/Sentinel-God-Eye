@@ -1,0 +1,37 @@
+version: '3.7'
+services:
+  # 1. O ROTEADOR DE EVENTOS (Substituto do Redis Pub/Sub para alta carga)
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:latest
+    container_name: sentinel-kafka
+    command:
+      - redpanda start
+      - --smp 1
+      - --overprovisioned
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+    ports:
+      - "19092:19092" # Porta que o Go e o Python vão usar para conversar
+      - "9644:9644"
+
+  # 2. O BURACO NEGRO DE LOGS (Para guardar milhões de requisições)
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: sentinel-clickhouse
+    ports:
+      - "8123:8123" # Porta HTTP
+      - "9000:9000" # Porta Nativa
+    environment:
+      CLICKHOUSE_USER: admin
+      CLICKHOUSE_PASSWORD: god_eye_password
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+
+  # Mantemos o Redis para Cache de OSINT ultra-rápido (aquele TTL de 24h)
+  redis:
+    image: redis:alpine
+    container_name: sentinel-redis
+    ports:
+      - "6379:6379"

@@ -1,0 +1,26 @@
+{
+  "event_id": "uuid-v4",
+  "timestamp": "iso-8601",
+  "origin": {
+    "project_name": "SaaS_Ultra",
+    "environment": "production",
+    "domain": "api.meusite.com"
+  },
+  "client": {
+    "ip": "0.0.0.0",
+    "user_agent": "string",
+    "fingerprint": "hash-unico",
+    "geo": { "country": "BR", "city": "SP" }
+  },
+  "request": {
+    "method": "POST",
+    "path": "/login",
+    "payload_hash": "sha256",
+    "status_code": 401
+  },
+  "security": {
+    "threat_level": 0,
+    "is_vpn": false,
+    "tags": []
+  }
+}
