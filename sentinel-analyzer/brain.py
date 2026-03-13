@@ -13,6 +13,10 @@ from engines.osint_engine import OSINTAnalyzer
 from engines.dpi_engine import DPISignatureDetector
 from engines.dlp_engine import DLPEngine
 from engines.amp_engine import AMPEngine
+from engines.correlation_engine import CorrelationEngine
+
+# NOVA INTEGRAÇÃO SOC (100% Completo Nível Militar)
+from engines.soc_orchestrator import SOCOrchestrator
 
 # --- 1. CONEXÕES DE INFRAESTRUTURA ---
 try:
@@ -46,16 +50,39 @@ osint_engine = OSINTAnalyzer(r)
 dpi_engine = DPISignatureDetector()
 dlp_engine = DLPEngine()
 amp_engine = AMPEngine()
+correlation_engine = CorrelationEngine(r)
 
-def execute_ban(ip, reason):
-    """Aplica a sentença final no Postgres e corta a conexão no Go"""
-    try:
-        cur_pg.execute("INSERT INTO blacklist (ip, reason) VALUES (%s, %s) ON CONFLICT (ip) DO NOTHING", (ip, reason))
-        conn_pg.commit()
-        requests.post("http://localhost:8080/sync-ban", json={"ip": ip}, timeout=0.5)
-        print(f"🚫 [BAN TERMINATED] {ip} | Motivo: {reason}")
-    except Exception as e:
-        print(f"⚠️ Erro ao banir: {e}")
+# Instancia o Orquestrador SOC Supremo
+soc_orchestrator = SOCOrchestrator()
+
+def execute_tier_response(ip, attacker_id, score, reason):
+    """SISTEMA DE MITIGAÇÃO PROGRESSIVA COM INTEGRAÇÕES SOC"""
+    if score < 40:
+        # TIER 1 - Apenas Observação (Log Mode)
+        print(f"👀 [LOG] {ip} suspeito, mas abaixo do limiar. Motivo: {reason}")
+        
+    elif 40 <= score < 90:
+        # TIER 2 - Desafio (Challenge)
+        try:
+            requests.post("http://localhost:8080/sync-challenge", json={"ip": ip}, timeout=0.5)
+        except:
+            pass
+        print(f"⚠️ [CHALLENGE] {ip} atingiu TIER 2. Enviando desafio JavaScript. Motivo: {reason}")
+        
+    else:
+        # TIER 3 - BANIMENTO E CONTRA-MEDIDAS
+        try:
+            # 1. Aplica o Ban
+            cur_pg.execute("INSERT INTO blacklist (ip, reason) VALUES (%s, %s) ON CONFLICT (ip) DO NOTHING", (ip, reason))
+            conn_pg.commit()
+            requests.post("http://localhost:8080/sync-ban", json={"ip": ip}, timeout=0.5)
+            print(f"🚫 [BAN TERMINATED] {ip} (ID: {attacker_id[:8]}) neutralizado! Motivo: {reason}")
+            
+            # 2. APERTA O BOTÃO VERMELHO! (Chama Nmap, Wireshark, OpenVAS e Metasploit de uma vez)
+            soc_orchestrator.execute_full_soc_response(ip)
+            
+        except Exception as e:
+            print(f"⚠️ Erro no Tier 3: {e}")
 
 def generate_attacker_id(event):
     """Gera a Digital Única do Atacante (Mesmo se ele mudar de IP)"""
@@ -65,7 +92,7 @@ def generate_attacker_id(event):
     return hashlib.md5(fingerprint_raw.encode()).hexdigest()
 
 # --- 2. LOOP PRINCIPAL (KAFKA CONSUMER) ---
-print("📡 Escutando tráfego de alta velocidade...")
+print("📡 Escutando tráfego de alta velocidade com Integrações SOC Ativas...")
 
 for msg in consumer:
     event = msg.value
@@ -76,41 +103,65 @@ for msg in consumer:
     # O FINGERPRINT (Attacker ID)
     attacker_id = generate_attacker_id(event)
 
+    # 0. INTELIGÊNCIA GLOBAL E SIEM (MISP, Wazuh, Security Onion/Suricata/Zeek)
+    is_misp, misp_msg = soc_orchestrator.query_misp(ip)
+    is_wazuh, wazuh_msg = soc_orchestrator.query_wazuh(ip)
+    is_onion, onion_msg = soc_orchestrator.query_security_onion(ip)
+    
+    if is_misp: 
+        total_score = 100
+        reasons.append(misp_msg)
+    if is_wazuh: 
+        total_score = 100
+        reasons.append("WAZUH ALERT: Invasão de Host Detectada")
+    if is_onion: 
+        total_score = max(total_score, 80)
+        reasons.append(onion_msg)
+
     # 1. BOT ID
     bot_score, bot_msg = bot_engine.analyze(event)
     if bot_score > 0:
         total_score += bot_score
-        reasons.append(bot_msg)
+        if bot_msg not in reasons: reasons.append(bot_msg)
 
     # 2. DPI (Assinaturas e Injeções)
     is_attack, dpi_msg, dpi_severity = dpi_engine.scan(event["path"], event.get("body", ""))
     if is_attack:
         total_score = max(total_score, dpi_severity)
-        reasons.append(dpi_msg)
+        if dpi_msg not in reasons: reasons.append(dpi_msg)
 
     # 3. DLP (Vazamento de Dados na Saída/Entrada)
     is_leak, dlp_msg, dlp_severity = dlp_engine.inspect(event.get("body", ""))
     if is_leak:
         total_score = max(total_score, dlp_severity)
-        reasons.append(dlp_msg)
+        if dlp_msg not in reasons: reasons.append(dlp_msg)
 
     # 4. AMP (Análise de Malware em POST)
     if event["method"] == "POST":
         is_malware, amp_msg, amp_severity = amp_engine.analyze_file(event.get("body", ""))
         if is_malware:
             total_score = max(total_score, amp_severity)
-            reasons.append(amp_msg)
+            if amp_msg not in reasons: reasons.append(amp_msg)
 
     # 5. OSINT (Reputação Global - Chamado por último para economizar API)
     osint_report = osint_engine.analyze_ip(ip)
     if osint_report["score"] >= 80:
         total_score = max(total_score, 100)
-        reasons.append(f"OSINT: IP Hostil Confirmado ({osint_report['geo']['country']})")
+        osint_msg = f"OSINT: IP Hostil Confirmado ({osint_report['geo']['country']})"
+        if osint_msg not in reasons: reasons.append(osint_msg)
 
-    # --- EXECUÇÃO DA SENTENÇA ---
-    if total_score >= 90:
+    # --- 6. MOTOR DE CORRELAÇÃO ---
+    for alert_reason in reasons:
+        is_critical, corr_msg, historical_score = correlation_engine.track_and_correlate(ip, attacker_id, alert_reason, total_score)
+        if is_critical:
+            total_score = 100
+            if corr_msg not in reasons: reasons.append(corr_msg)
+            break 
+
+    # --- EXECUÇÃO DA SENTENÇA (SISTEMA DE TIERS) ---
+    if total_score > 0:
         final_reason = " | ".join(reasons)
-        execute_ban(ip, final_reason)
+        execute_tier_response(ip, attacker_id, total_score, final_reason)
 
     # --- REGISTRO NA CAIXA PRETA (CLICKHOUSE) ---
     try:
@@ -136,5 +187,5 @@ for msg in consumer:
     r.publish("SENTINEL_GEO_STREAM", json.dumps(event))
 
     # Log no terminal
-    status = "🔴" if total_score >= 90 else "🟢"
+    status = "🔴" if total_score >= 90 else ("🟡" if total_score >= 40 else "🟢")
     print(f"{status} [{ip}] ID: {attacker_id[:8]} | Score: {total_score}% | Via: Kafka -> ClickHouse")

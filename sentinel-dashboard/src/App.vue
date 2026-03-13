@@ -1,72 +1,65 @@
+<script setup>
+import { useRoute } from 'vue-router';
+
+// A lista do seu menu lateral baseado no seu planejamento
+const menuItems = [
+  { name: 'Dashboard', path: '/', icon: '🏠' },
+  { name: 'Mapa de Ataques', path: '/map', icon: '🌍' },
+  { name: 'Monitor de Tráfego', path: '/traffic', icon: '📡' },
+  { name: 'Explorer de Requests', path: '/explorer', icon: '🔎' },
+  { name: 'Inteligência (AI)', path: '/intelligence', icon: '🧠' },
+  { name: 'Defesa & WAF', path: '/defense', icon: '🛡️' },
+  { name: 'Integrações', path: '/integrations', icon: '🔌' },
+  { name: 'Analytics', path: '/analytics', icon: '📊' },
+  { name: 'Forense', path: '/forensics', icon: '🎥' },
+  { name: 'Sistema', path: '/system', icon: '⚙️' }
+];
+
+const route = useRoute();
+</script>
+
 <template>
-  <div class="min-h-screen bg-black text-slate-100 p-6 font-mono scanline">
-    <header class="flex justify-between items-center mb-8 border-b border-red-900 pb-4">
-      <h1 class="text-3xl font-black text-red-600 tracking-tighter">SENTINEL: GOD EYE v2.0</h1>
-      <div class="text-right text-xs">
-        <span class="text-emerald-500 animate-pulse">● RADAR ATIVO</span> | TOTAL VISIBILITY MODE
-      </div>
-    </header>
-
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+  <div class="flex h-screen w-screen bg-dark">
+    
+    <aside class="w-64 bg-panel border-r border-slate-800 flex flex-col">
       
-      <section class="border border-slate-800 bg-slate-900/30 rounded-lg">
-        <h2 class="p-4 bg-slate-800 text-slate-300 text-sm font-bold uppercase tracking-widest">
-          📡 Live Traffic Feed (Global Entry)
-        </h2>
-        <div class="overflow-y-auto h-[600px] p-2 space-y-2">
-          <div v-for="log in liveTraffic" :key="log.id" 
-               class="text-[10px] p-2 border-l-2 border-blue-500 bg-blue-500/5 flex justify-between">
-            <span>
-              <b class="text-blue-400">[{{ log.method }}]</b> {{ log.ip }} 
-              <span class="text-slate-500">→</span> <span class="text-slate-300">{{ log.path }}</span>
-            </span>
-            <span class="text-slate-600 italic">{{ formatTime(log.timestamp) }}</span>
+      <div class="h-16 flex items-center px-6 border-b border-slate-800">
+        <span class="text-xl font-bold tracking-widest text-white drop-shadow-[0_0_8px_rgba(0,255,204,0.8)]">
+          👁️ SENTINEL
+        </span>
+      </div>
+
+      <nav class="flex-1 overflow-y-auto py-4">
+        <ul class="space-y-1">
+          <li v-for="item in menuItems" :key="item.name">
+            <router-link 
+              :to="item.path"
+              class="flex items-center px-6 py-3 text-sm text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              :class="{ 'bg-slate-800 border-r-4 border-primary text-primary font-bold': route.path === item.path }"
+            >
+              <span class="mr-3 text-lg">{{ item.icon }}</span>
+              {{ item.name }}
+            </router-link>
+          </li>
+        </ul>
+      </nav>
+
+      <div class="p-4 border-t border-slate-800">
+        <div class="flex items-center">
+          <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold border border-primary/50">
+            AD
+          </div>
+          <div class="ml-3">
+            <p class="text-xs font-bold text-white">Admin Global</p>
+            <p class="text-[10px] text-primary">Nível Militar Ativo</p>
           </div>
         </div>
-      </section>
+      </div>
+    </aside>
 
-      <section class="border border-red-900 bg-red-950/10 rounded-lg">
-        <h2 class="p-4 bg-red-950/40 text-red-500 text-sm font-bold uppercase tracking-widest">
-          💀 Neutralized Threats (Blacklist)
-        </h2>
-        <div class="overflow-y-auto h-[600px] p-4">
-          <div v-for="threat in threats" :key="threat.ip" 
-               class="mb-4 p-3 border border-red-900/50 bg-black rounded shadow-lg shadow-red-900/10">
-            <div class="flex justify-between font-bold">
-              <span class="text-red-400">{{ threat.ip }}</span>
-              <span class="text-[10px] text-red-700 uppercase">Status: Terminated</span>
-            </div>
-            <p class="text-[11px] text-slate-400 mt-1 uppercase">{{ threat.reason }}</p>
-          </div>
-        </div>
-      </section>
+    <main class="flex-1 relative overflow-hidden">
+      <router-view></router-view>
+    </main>
 
-    </div>
   </div>
 </template>
-
-<script setup>
-import { ref, onMounted } from 'vue';
-
-const threats = ref([]);
-const liveTraffic = ref([]);
-
-const updateData = async () => {
-  try {
-    // Puxa o Cemitério
-    const resBans = await fetch('http://localhost:8081/api/audit/blacklist');
-    threats.value = await resBans.json();
-
-    // Puxa o Fluxo Total
-    const resLive = await fetch('http://localhost:8081/api/audit/live-traffic');
-    liveTraffic.value = await resLive.json();
-  } catch (e) { console.error("OFFLINE"); }
-};
-
-const formatTime = (ts) => new Date(ts).toLocaleTimeString();
-
-onMounted(() => {
-  updateData();
-  setInterval(updateData, 2000); // Atualiza a cada 2 segundos pra ser "God Eye" mesmo
-});
-</script>
