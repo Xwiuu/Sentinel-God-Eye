@@ -129,6 +129,6 @@ func main() {
 		return c.Status(202).JSON(fiber.Map{"status": "captured"})
 	})
 
-	log.Println("🚀 [SENTINEL SENSOR] Go rodando na porta 8080 e atirando no Kafka!")
+	log.Println("📥 [SENSOR] Pacote processado e enviado ao Redpanda")
 	log.Fatal(app.Listen(":8080"))
 }

@@ -1,8 +1,19 @@
+/* src/style.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-body {
-  background-color: #0f172a;
-  color: #cbd5e1;
+:root {
+  background-color: #020202;
+}
+
+html, body, #app {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #020202;
+  color: #00ff41;
+  font-family: 'JetBrains Mono', monospace;
+  overflow: hidden;
 }

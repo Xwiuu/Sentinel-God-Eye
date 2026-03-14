@@ -1,0 +1,6 @@
+@echo off
+echo [SHIELD] Instalando Arcanjo de Infra...
+pip install redis psutil
+echo [SHIELD] Registrando servico de monitoramento...
+python arcanjo_blocker.py
+pause

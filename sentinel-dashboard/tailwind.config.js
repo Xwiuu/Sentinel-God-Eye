@@ -7,10 +7,9 @@ export default {
   theme: {
     extend: {
       colors: {
-        dark: '#0f172a',
-        panel: '#1e293b',
-        primary: '#00ffcc',
-        danger: '#ff0033'
+        'obsidian': '#020202',
+        'matrix-green': '#00ff41',
+        'emergency-red': '#ff0000',
       }
     },
   },

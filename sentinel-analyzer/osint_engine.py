@@ -1,98 +1,72 @@
 import requests
 import json
+import redis
 
-# Suas chaves de acesso (Deixe vazio se ainda não criou, o sistema não vai travar)
-ABUSE_IPDB_KEY = "COLE_SUA_CHAVE_ABUSE_AQUI"
-SHODAN_KEY = "COLE_SUA_CHAVE_SHODAN_AQUI"
+class OSINTAnalyzer:
+    def __init__(self, redis_client):
+        self.r = redis_client
+        # SUAS CHAVES REAIS
+        self.ABUSE_IPDB_KEY = "233048731d10813248bbda917ce4cc5b3cf24787a0e715e1804198be10976922fee892f7b8daac21"
+        self.SHODAN_KEY = "bN39vv2zjplx12Ec3mVZk4einpSgE0bd"
 
-def is_local(ip):
-    """Ignora varreduras em IPs locais e de testes"""
-    return ip == "127.0.0.1" or ip.startswith("192.168.") or ip.startswith("10.")
+    def analyze_ip(self, ip):
+        """Executa a perícia completa no alvo"""
+        if ip == "127.0.0.1" or ip.startswith("192.168."):
+            return {
+                "score": 0,
+                "geo": {"country": "Localhost", "city": "Bunker", "isp": "Internal Network", "lat": -23.5, "lon": -46.6},
+                "abuse": {"score": 0, "reports": 0},
+                "shodan": {"ports": [], "os": "Unknown", "vulns": []}
+            }
 
-def check_abuseipdb(ip, redis_client):
-    """Consulta a ficha criminal global do atacante"""
-    if is_local(ip) or not ABUSE_IPDB_KEY: return 0
-    
-    cached_score = redis_client.get(f"osint:abuse:{ip}")
-    if cached_score: return int(cached_score)
-
-    try:
-        url = "https://api.abuseipdb.com/api/v2/check"
-        headers = {'Accept': 'application/json', 'Key': ABUSE_IPDB_KEY}
-        resp = requests.get(url, headers=headers, params={'ipAddress': ip, 'maxAgeInDays': '90'}, timeout=3)
-        if resp.status_code == 200:
-            score = resp.json()['data']['abuseConfidenceScore']
-            redis_client.setex(f"osint:abuse:{ip}", 86400, score)
-            return score
-    except: pass
-    return 0
-
-def check_shodan(ip, redis_client):
-    """Faz um Raio-X do IP para descobrir portas e vulnerabilidades"""
-    if is_local(ip) or not SHODAN_KEY: return None
-    
-    cached_data = redis_client.get(f"osint:shodan:{ip}")
-    if cached_data: return json.loads(cached_data)
-
-    try:
-        url = f"https://api.shodan.io/shodan/host/{ip}?key={SHODAN_KEY}"
-        resp = requests.get(url, timeout=3)
-        if resp.status_code == 200:
-            data = resp.json()
-            info = {"ports": data.get('ports', []), "org": data.get('org', 'Unknown')}
-            redis_client.setex(f"osint:shodan:{ip}", 86400, json.dumps(info))
-            return info
-    except: pass
-    return None
-
-def check_vpn_tor(ip, redis_client):
-    """Fura-Máscaras: Verifica se é VPN, Proxy ou Tor"""
-    if is_local(ip): return False, "Rede Local"
-    
-    cached_data = redis_client.get(f"osint:vpn:{ip}")
-    if cached_data: 
-        return cached_data.decode('utf-8') == 'True', "Cached Mask"
-
-    try:
-        url = f"http://proxycheck.io/v2/{ip}?vpn=1&asn=1"
-        resp = requests.get(url, timeout=3)
-        if resp.status_code == 200:
-            data = resp.json()
-            if ip in data and data[ip].get('proxy') == 'yes':
-                proxy_type = data[ip].get('type', 'VPN/Proxy')
-                redis_client.setex(f"osint:vpn:{ip}", 86400, "True")
-                return True, proxy_type
-            else:
-                redis_client.setex(f"osint:vpn:{ip}", 86400, "False")
-                return False, "IP Residencial"
-    except: pass
-    return False, "Desconhecido"
-
-def get_geolocation(ip, redis_client):
-    """Radar de Precisão Máxima (Máximo permitido sem mandado judicial)"""
-    if is_local(ip): 
-        return {"lat": -23.5505, "lon": -46.6333, "country": "BR", "city": "Bunker", "isp": "Localhost"}
-    
-    cached_geo = redis_client.get(f"osint:geo:{ip}")
-    if cached_geo: return json.loads(cached_geo)
-
-    try:
-        # Pede os dados completos: Cidade, CEP (ZIP), ISP e Coordenadas
-        url = f"http://ip-api.com/json/{ip}?fields=status,country,city,zip,lat,lon,isp"
-        resp = requests.get(url, timeout=3)
+        # 1. GEOLOCALIZAÇÃO
+        geo = self._get_geo(ip)
         
-        if resp.status_code == 200:
-            data = resp.json()
-            if data['status'] == 'success':
-                geo_info = {
-                    "lat": data.get('lat', 0.0),
-                    "lon": data.get('lon', 0.0),
-                    "country": data.get('country', 'Unknown'),
-                    "city": data.get('city', 'Unknown'),
-                    "zip": data.get('zip', 'N/A'),
-                    "isp": data.get('isp', 'Unknown')
-                }
-                redis_client.setex(f"osint:geo:{ip}", 86400, json.dumps(geo_info))
-                return geo_info
-    except: pass
-    return {"lat": 0.0, "lon": 0.0, "country": "Unknown", "city": "Unknown", "isp": "Unknown"}
+        # 2. ABUSO CRIMINAL (AbuseIPDB)
+        abuse = self._check_abuse(ip)
+        
+        # 3. RAIO-X DE INFRAESTRUTURA (Shodan)
+        shodan = self._check_shodan(ip)
+
+        return {
+            "ip": ip,
+            "score": abuse['score'],
+            "geo": geo,
+            "abuse": abuse,
+            "shodan": shodan
+        }
+
+    def _get_geo(self, ip):
+        cache = self.r.get(f"osint:geo:{ip}")
+        if cache: return json.loads(cache)
+        try:
+            r = requests.get(f"http://ip-api.com/json/{ip}?fields=status,country,city,lat,lon,isp,proxy", timeout=3).json()
+            if r['status'] == 'success':
+                self.r.setex(f"osint:geo:{ip}", 86400, json.dumps(r))
+                return r
+        except: pass
+        return {"country": "Unknown"}
+
+    def _check_abuse(self, ip):
+        try:
+            url = "https://api.abuseipdb.com/api/v2/check"
+            headers = {'Accept': 'application/json', 'Key': self.ABUSE_IPDB_KEY}
+            params = {'ipAddress': ip, 'maxAgeInDays': '90'}
+            r = requests.get(url, headers=headers, params=params, timeout=4).json()
+            return {
+                "score": r['data']['abuseConfidenceScore'],
+                "total_reports": r['data']['totalReports'],
+                "last_report": r['data'].get('lastReportedAt', 'N/A')
+            }
+        except: return {"score": 0, "total_reports": 0}
+
+    def _check_shodan(self, ip):
+        try:
+            r = requests.get(f"https://api.shodan.io/shodan/host/{ip}?key={self.SHODAN_KEY}", timeout=5).json()
+            return {
+                "ports": r.get('ports', []),
+                "os": r.get('os', 'Unknown'),
+                "vulns": r.get('vulns', []), # LISTA DE CVEs (Vulnerabilidades reais)
+                "org": r.get('org', 'Unknown')
+            }
+        except: return {"ports": [], "vulns": []}
